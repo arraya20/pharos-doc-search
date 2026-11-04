@@ -177,9 +177,15 @@ on every build would be noise, not a signal.
 ## Tests
 
 ```bash
-npm test           # 93 pass, 5 skipped (live tests are opt-in)
+npm test           # 99 pass, 5 skipped (live tests are opt-in)
 npm run test:live  # 5 more: real ask call, real page fetch, 74-URL liveness sweep
 ```
+
+Content comes out of GitBook's markdown export with punctuation escapes
+(`eth\_getProof`, `wss\://`), and GitBook is inconsistent about doubling them.
+Those backslashes are markup, not content, so the title/snippet projections strip
+them while the stored markdown body is left verbatim; `test/markdown-escapes.test.mjs`
+pins both halves of that, including a sweep over all 74 pages.
 
 The suite covers the ranking invariants (an exact page id beats a mention,
 section filters actually filter, gibberish scores low), the CLI contract

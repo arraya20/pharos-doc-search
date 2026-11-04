@@ -100,18 +100,39 @@ export function stripBoilerplate(markdown) {
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/**
+ * Undo CommonMark backslash escapes. GitBook writes `# eth\_getProof` so that
+ * the underscore is not read as emphasis, but that backslash is markup, not
+ * content: rendered as text it leaks through as "eth\_getProof" in titles,
+ * headings and snippets. Only ASCII punctuation can be escaped, so only that
+ * is unescaped.
+ */
+export function unescapeMarkdown(value) {
+  // GitBook's markdown export escapes inconsistently — `wss\://` next to
+  // `wss://`, `api\_key` next to `apikey` — so one pass leaves half-unescaped
+  // text behind. Repeat until stable (bounded; three is generous). Letters and
+  // digits are never unescaped, so `C:\\Users` and `\n` inside code survive.
+  let text = String(value);
+  for (let pass = 0; pass < 3; pass += 1) {
+    const next = text.replace(/\\([!-/:-@[-`{-~])/g, "$1");
+    if (next === text) break;
+    text = next;
+  }
+  return text;
+}
+
 export function extractHeadings(markdown) {
   const headings = [];
   for (const line of markdown.split("\n")) {
     const m = line.match(/^(#{2,3})\s+(.+?)\s*$/);
-    if (m) headings.push(m[2].replace(/[*`]/g, "").trim());
+    if (m) headings.push(unescapeMarkdown(m[2].replace(/[*`]/g, "")).trim());
   }
   return [...new Set(headings)].slice(0, 20);
 }
 
 export function extractTitle(markdown, fallback) {
   const h1 = markdown.match(/^#\s+(.+)$/m);
-  return h1 ? h1[1].replace(/[*`]/g, "").trim() : fallback;
+  return h1 ? unescapeMarkdown(h1[1].replace(/[*`]/g, "")).trim() : unescapeMarkdown(fallback);
 }
 
 /**
@@ -121,7 +142,7 @@ export function extractTitle(markdown, fallback) {
  * "chain id" reads like "| ChainID | 1672 | | ------- | ---- |".
  */
 export function toPlainText(markdown) {
-  return markdown
+  const flat = markdown
     .split("\n")
     .filter((line) => !/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(line))
     .map((line) =>
@@ -140,6 +161,9 @@ export function toPlainText(markdown) {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
+  // Escapes come off last: doing it earlier would let `\\[text\\](url)` turn
+  // back into a link after the link-collapsing step had already run.
+  return unescapeMarkdown(flat);
 }
 
 function sectionFor(id) {
@@ -350,7 +374,7 @@ function firstParagraph(text) {
     .map((p) => p.trim())
     .find((p) => p && !p.startsWith("#") && !p.startsWith("|") && !p.startsWith("-") && !p.startsWith(">"));
   if (!paragraph) return "";
-  return paragraph.replace(/[*`\[\]]/g, "").replace(/\s+/g, " ").slice(0, 240);
+  return unescapeMarkdown(paragraph.replace(/[*`\[\]]/g, "")).replace(/\s+/g, " ").slice(0, 240);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
