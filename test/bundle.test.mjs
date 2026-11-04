@@ -79,3 +79,23 @@ test("package.json wires the scripts the README promises", () => {
   assert.equal(pkg.type, "module");
   assert.ok(pkg.engines?.node, "engines.node should be declared");
 });
+
+test("404.html exists, reuses the stylesheet, and names the real routes", () => {
+  const html = read("public", "404.html");
+  assert.match(html, /href="\/style\.css"/);
+  assert.match(html, /href="\/"/);
+  for (const route of ["/api/search", "/api/ask", "/api/doc", "/api/meta"]) {
+    assert.ok(html.includes(route), `404 page omits ${route}`);
+  }
+});
+
+test("shipping metadata has no placeholders and points at a real repo", () => {
+  const pkg = JSON.parse(read("package.json"));
+  assert.match(pkg.repository.url, /github\.com\/arraya20\/pharos-doc-search/);
+  assert.ok(!/USER|CHANGEME|example\.com/.test(pkg.repository.url + pkg.homepage));
+  assert.equal(pkg.license, "MIT");
+  assert.match(read("LICENSE"), /MIT License/);
+  const skill = read("SKILL.md");
+  assert.match(skill, /^---\nname: pharos-doc-search\n/, "SKILL.md needs frontmatter");
+  assert.match(skill, /^version: \d+\.\d+\.\d+$/m);
+});

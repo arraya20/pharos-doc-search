@@ -25,7 +25,7 @@
   "scripts": {
     "search": "node src/cli.mjs",
     "build:index": "node scripts/build-index.mjs",
-    "check": "node --check src/cli.mjs && node --check src/kb.mjs && node --check src/docs-source.mjs && node --check scripts/build-index.mjs && node --check functions/_lib/http.js && node --check functions/api/search.js && node --check functions/api/ask.js && node --check functions/api/doc.js && node --check functions/api/meta.js",
+    "check": "node --check src/cli.mjs && node --check src/kb.mjs && node --check src/docs-source.mjs && node --check scripts/build-index.mjs && node --check functions/_lib/http.js && node --check functions/api/search.js && node --check functions/api/ask.js && node --check functions/api/doc.js && node --check functions/api/meta.js && node --check public/app.js && node --check public/kb.mjs",
     "test": "node --test",
     "test:live": "RUN_LIVE_TESTS=1 node --test test/live.test.mjs",
     "verify": "node src/cli.mjs verify",

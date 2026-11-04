@@ -169,3 +169,43 @@ test("OPTIONS is a CORS preflight with no body", async () => {
   assert.match(response.headers.get("access-control-allow-methods"), /GET/);
   assert.equal(await response.text(), "");
 });
+
+test("/api/doc accepts live=1 as a live switch and reports source=live", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response("# Gas Model\n\nRefunds are computed per transaction.\n", {
+      status: 200,
+      headers: { "content-type": "text/markdown" }
+    });
+  try {
+    const { status, body } = await call(docHandler, "/api/doc?id=getting-started/gas-model&live=1");
+    assert.equal(status, 200);
+    assert.equal(body.source, "live");
+    assert.match(body.markdown, /Refunds are computed/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("/api/doc refuses an unknown source instead of defaulting", async () => {
+  const { status, body } = await call(docHandler, "/api/doc?id=getting-started/gas-model&source=whatever");
+  assert.equal(status, 400);
+  assert.equal(body.error.code, "bad_request");
+});
+
+test("/api/doc surfaces a soft-404 upstream as 502, and says the index copy survives", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response("# Page Not Found\n\nThe page you are looking for does not exist.\n", {
+      status: 200,
+      headers: { "content-type": "text/markdown" }
+    });
+  try {
+    const { status, body } = await call(docHandler, "/api/doc?id=getting-started/gas-model&source=live");
+    assert.equal(status, 502);
+    assert.equal(body.error.code, "not_found");
+    assert.match(body.error.message, /index copy is still available/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

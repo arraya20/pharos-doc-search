@@ -16,7 +16,7 @@ export async function onRequest(context) {
 
   let params;
   try {
-    params = await readParams(request, ["id", "source", "timeout"]);
+    params = await readParams(request, ["id", "source", "live", "timeout"]);
   } catch (err) {
     return fail(err.message, { status: 400 });
   }
@@ -26,7 +26,24 @@ export async function onRequest(context) {
     return fail(`no page with id "${params.id || ""}"`, { status: 404, code: "doc_not_found" });
   }
 
-  if ((params.source || "index") === "index") {
+  // `source=live` is the documented switch; `live=1` is accepted because that is
+  // what people type. Anything else is a mistake worth reporting, not defaulting.
+  let mode;
+  if (params.source !== undefined) {
+    mode = params.source;
+  } else if (params.live !== undefined) {
+    mode = params.live === "1" || params.live === "true" ? "live" : "index";
+  } else {
+    mode = "index";
+  }
+  if (mode !== "index" && mode !== "live") {
+    return fail(`unknown source "${mode}" — use source=index or source=live`, {
+      status: 400,
+      code: "bad_request"
+    });
+  }
+
+  if (mode === "index") {
     return json(
       {
         success: true,

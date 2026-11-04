@@ -12,7 +12,7 @@ pharos-docs ask "how do I bridge USDC?" --goal "fund a trading bot"
 pharos-docs doc getting-started/gas-model
 ```
 
-Index: 74 pages · 8 sections · `1e73d0ea17ec7c23` · 82 tests (77 offline, 5 live).
+Index: 74 pages · 8 sections · `1e73d0ea17ec7c23` · 87 tests (82 offline, 5 live).
 
 ## Why this exists
 
@@ -39,8 +39,7 @@ Node 20.11+.
 ```bash
 git clone https://github.com/arraya20/pharos-doc-search
 cd pharos-doc-search
-npm install          # no dependencies, this just links nothing
-npm link             # puts `pharos-docs` on your PATH
+npm link             # puts `pharos-docs` on your PATH; there are no dependencies to install
 pharos-docs --help
 ```
 
@@ -122,9 +121,9 @@ CORS-open, and cached at the edge (`max-age=300` for search, `60` for live).
 
 | Endpoint | Query | Returns |
 | --- | --- | --- |
-| `GET /api/search` | `q`, `limit` (1-20), `section` | `{ success, query, count, results[], confidence }` |
+| `GET /api/search` | `q` (or `query`), `limit`, `section`, `id` | `{ success, query, count, results[], confidence }`; pass `id` alone for a single-page lookup |
 | `GET /api/ask` | `q`, `goal` (max 500 chars) | `{ success, answer, sources[], followUps[], upstream }` |
-| `GET /api/doc` | `id`, `live=1` | `{ doc: { id, title, url, markdown } , source }` |
+| `GET /api/doc` | `id`, `source=index\|live` (`live=1` alias) | `{ doc: { id, title, url, markdown } , source }` |
 | `GET /api/meta` | — | index hash, page counts, sections, endpoint list |
 
 ```bash
@@ -132,10 +131,12 @@ curl -s 'https://HOST/api/search?q=managing+contract+state&limit=2' | jq '.resul
 curl -s 'https://HOST/api/ask?q=how+do+I+deploy+with+foundry' | jq -r '.answer, .sources[].url'
 ```
 
-Errors are structured and never return `200` with an empty list:
-`400 missing_query | question_too_long | invalid_limit`, `404 doc_not_found`,
-`405 method_not_allowed`, `502 upstream_error`, `504 upstream_timeout`.
-Request bodies over 8 KB are refused rather than buffered.
+`limit` is clamped to 1-20 (default 5) rather than rejected. Timeouts are clamped
+to 3-20 s per endpoint. Errors are structured and never return `200` with an
+empty list: `400 missing_query | question_too_long | bad_request`,
+`404 doc_not_found | not_found`, `405 method_not_allowed`,
+`502 upstream_error | network_error | unparseable`, `504 timeout`,
+`500 internal_error`. Request bodies over 8 KB are refused, not buffered.
 
 ## Deploy
 
@@ -170,7 +171,7 @@ they share the same content hash, so a stale copy fails the suite.
 ## Tests
 
 ```bash
-npm test           # 77 pass, 5 skipped (live tests are opt-in)
+`npm test`           # 82 pass, 5 skipped (live tests are opt-in)
 npm run test:live  # 5 more: real ask call, real page fetch, 74-URL liveness sweep
 ```
 
@@ -201,7 +202,7 @@ scripts/build-index.mjs    llms.txt → index, strict
 functions/api/*.js         Pages Functions endpoints
 functions/_lib/http.js     CORS, JSON, param parsing, body cap
 public/                    dashboard (no build step)
-test/                      82 tests
+test/                      87 tests
 ```
 
 Built for the Pharos Agent Arena. Docs: <https://docs.pharos.xyz>.
