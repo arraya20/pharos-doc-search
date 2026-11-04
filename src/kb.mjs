@@ -26,7 +26,11 @@ const STOPWORDS = new Set([
   "for", "from", "get", "give", "how", "i", "in", "into", "is", "it", "its", "me", "my",
   "of", "on", "or", "should", "show", "tell", "that", "the", "there", "these", "this",
   "to", "use", "using", "want", "was", "what", "when", "where", "which", "who", "why",
-  "will", "with", "you", "your", "explain", "please", "help", "need"
+  "will", "with", "you", "your", "explain", "please", "help", "need",
+  // Quantifiers that ask about magnitude without naming anything. "how much
+  // does a transaction cost" is a question about gas; leaving "much" in the
+  // query let a marketing page that says "no matter how much" outrank it.
+  "much", "many"
 ]);
 
 // Domain vocabulary that natural-language questions use but docs spell differently.
