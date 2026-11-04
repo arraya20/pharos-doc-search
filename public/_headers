@@ -1,0 +1,24 @@
+# Cloudflare Pages applies these per request. The page has no inline scripts or
+# styles, so the CSP can stay strict — if that ever changes, this file is the
+# thing that breaks first, which is the point.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+# These are rebuilt in place under stable names, and app.js imports both: a
+# browser that caches them independently can end up running a new engine against
+# an old index for the length of the TTL. Revalidate instead — the ETag makes a
+# repeat visit a 304, not a 384 KB download.
+/index.generated.js
+  Cache-Control: no-cache
+
+/kb.mjs
+  Cache-Control: no-cache
+
+# Search results are derived from the current index, and a stale one would
+# disagree with the page that served it.
+/api/*
+  Cache-Control: no-store

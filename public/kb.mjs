@@ -17,6 +17,10 @@ const K1 = 1.4;
 const B = 0.72;
 const FIELD_WEIGHTS = { title: 5.0, headings: 3.0, description: 2.0, id: 1.6, text: 1.0 };
 const SNIPPET_RADIUS = 170;
+// Weight of the definition-page bonus, and the length below which a page is too
+// small to be a real reference table.
+const DEFINITION_WEIGHT = 8;
+const MIN_DEFINITION_TOKENS = 24;
 
 const STOPWORDS = new Set([
   "a", "about", "an", "and", "any", "are", "as", "at", "be", "by", "can", "do", "does",
@@ -65,15 +69,28 @@ function normalize(text) {
 }
 
 export function tokenize(text) {
-  const raw = normalize(text).replace(/[^a-z0-9_\-.\s]/g, " ").split(/\s+/).filter(Boolean);
+  const source = String(text || "");
+  // "ChainID" and "maxPriorityFeePerGas" are single words to a regex but two and
+  // five words to a reader. Index both spellings so "chain id" finds ChainID and
+  // "priority fee" finds maxPriorityFeePerGas, while the compound stays findable.
+  const compoundSplit = source
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
   const out = [];
-  for (const token of raw) {
-    const cleaned = token.replace(/^[.\-]+|[.\-]+$/g, "");
-    if (!cleaned) continue;
-    // Keep dotted/hyphenated identifiers searchable both whole and in parts.
-    out.push(cleaned);
-    if (/[.\-_]/.test(cleaned)) {
-      for (const part of cleaned.split(/[.\-_]+/)) if (part.length > 2) out.push(part);
+  const variants = compoundSplit === source ? [source] : [source, compoundSplit];
+  for (const variant of variants) {
+    const raw = normalize(variant)
+      .replace(/[^a-z0-9_.\-\s]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean);
+    for (const token of raw) {
+      const cleaned = token.replace(/^[.\-]+|[.\-]+$/g, "");
+      if (!cleaned) continue;
+      // Keep dotted/hyphenated identifiers searchable both whole and in parts.
+      out.push(cleaned);
+      if (/[.\-_]/.test(cleaned)) {
+        for (const part of cleaned.split(/[.\-_]+/)) if (part.length > 2) out.push(part);
+      }
     }
   }
   return out;
@@ -87,7 +104,15 @@ function queryTerms(query) {
     if (ALIASES[squeeze]) for (const alias of ALIASES[squeeze]) expanded.add(alias);
     if (ALIASES[term]) for (const alias of ALIASES[term]) expanded.add(alias);
   }
-  return { base, all: [...expanded] };
+  // "chain id" is also the compound "ChainID", and the docs use both spellings.
+  // Documents that spell it as one word carry the rarer token, so this is what
+  // lets the Pacific Mainnet parameter table outrank pages that merely say
+  // "chain" often. It is scored, but kept out of coverage: a page that answers
+  // with the spaced spelling is still a good answer.
+  const uniqueBase = [...new Set(base)];
+  const compound = uniqueBase.length > 1 ? uniqueBase.join("") : "";
+  if (compound.length > 3) expanded.add(compound);
+  return { base, all: [...expanded], compound };
 }
 
 function termFrequency(tokens) {
@@ -167,7 +192,7 @@ export function searchDocs(query, options = {}) {
   // a listing should read DOCS directly.
   if (!trimmed) return [];
 
-  const { base, all } = queryTerms(trimmed);
+  const { base, all, compound } = queryTerms(trimmed);
   if (all.length === 0) return [];
   // Raw query tokens (stopwords included) are used for "does the query name
   // this page's title" checks — "how do I write my first NFT" names the page.
@@ -179,7 +204,7 @@ export function searchDocs(query, options = {}) {
     const matchedTerms = [];
 
     for (const term of all) {
-      const weight = base.includes(term) ? 1 : 0.6;
+      const weight = base.includes(term) || term === compound ? 1 : 0.6;
       let termScore = 0;
       for (const [field, fieldWeight] of Object.entries(FIELD_WEIGHTS)) {
         const tf = entry.fields[field].get(term);
@@ -239,6 +264,24 @@ export function searchDocs(query, options = {}) {
       }
       const coverage = idfTotal > 0 ? idfHit / idfTotal : 0;
       score *= 0.35 + 0.65 * coverage;
+    }
+
+    // Definition-page bonus. A short page that covers the whole query is
+    // usually the reference table that answers it — "chain id" wants the
+    // forty-token Network Information block, not a 4000-token methods list
+    // that happens to repeat chainId twenty times. BM25 cannot see this: it
+    // counts how much of the query is in the page, never how much of the page
+    // is about the query, and absolute term counts always favour the long
+    // document. In this corpus the shortest pages are all parameter
+    // references (network info, token registry, block explorer), so length is
+    // a usable proxy for "this page exists to state facts".
+    const bodyTokens = entry.lengths.text;
+    if (uniqueBase.length >= 2 && bodyTokens >= MIN_DEFINITION_TOKENS) {
+      const coveredAll = uniqueBase.every((term) => matchedTerms.includes(term));
+      if (coveredAll) {
+        const brevity = Math.max(0, 1 - bodyTokens / AVG_LEN.text);
+        score += DEFINITION_WEIGHT * brevity;
+      }
     }
 
     if (score > 0) {

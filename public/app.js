@@ -126,15 +126,33 @@ function renderMarkdown(source) {
   return out.join("\n");
 }
 
-/** Wrap query terms in <mark>, on already-escaped text. */
+/**
+ * Wrap query terms in <mark>, on already-escaped text.
+ *
+ * Matches must land on word boundaries. Without that, the term "id" lights up
+ * the middle of "providing" and "Validation", and the result then looks like it
+ * is about a word the page never uses. Entities are skipped so a query of "amp"
+ * cannot be wrapped inside the escaping of "&amp;".
+ */
 function highlight(escapedText, terms) {
   const words = terms.filter((term) => term.length > 1).slice(0, 8);
   if (!words.length) return escapedText;
   const pattern = words
     .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
     .sort((a, b) => b.length - a.length)
+    .map((term) => {
+      // \b only exists between a word char and a non-word char, so a side that
+      // starts or ends with punctuation cannot take the anchor.
+      const head = /^[a-z0-9]/i.test(term) ? "\\b" : "";
+      const tail = /[a-z0-9]$/i.test(term) ? "\\b" : "";
+      return `${head}${term}${tail}`;
+    })
     .join("|");
-  return escapedText.replace(new RegExp(`(${pattern})`, "gi"), "<mark>$1</mark>");
+  const re = new RegExp(`(${pattern})`, "gi");
+  return escapedText
+    .split(/(&[#a-z0-9]+;)/i)
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(re, "<mark>$1</mark>")))
+    .join("");
 }
 
 /* ------------------------------------------------------------------- chrome */

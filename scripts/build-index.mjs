@@ -125,7 +125,14 @@ export function extractHeadings(markdown) {
   const headings = [];
   for (const line of markdown.split("\n")) {
     const m = line.match(/^(#{2,3})\s+(.+?)\s*$/);
-    if (m) headings.push(unescapeMarkdown(m[2].replace(/[*`]/g, "")).trim());
+    if (m) {
+      const clean = m[2]
+        .replace(/<[^>]*>/g, " ") // GitBook appends <a href="#anchor"></a> to headings
+        .replace(/[*`]/g, "")
+        .replace(/\s+/g, " ");
+      const heading = unescapeMarkdown(clean).trim();
+      if (heading) headings.push(heading);
+    }
   }
   return [...new Set(headings)].slice(0, 20);
 }
@@ -142,29 +149,47 @@ export function extractTitle(markdown, fallback) {
  * "chain id" reads like "| ChainID | 1672 | | ------- | ---- |".
  */
 export function toPlainText(markdown) {
-  const flat = markdown
-    .split("\n")
-    .filter((line) => !/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(line))
-    .map((line) =>
-      line
-        .replace(/^#{1,6}\s+/, "")
-        .replace(/^\s*[-*+]\s+/, "")
-        .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-        .replace(/<((?:https?|mailto):[^>]+)>/g, "$1")
-        .replace(/^\s*\|/g, "")
-        .replace(/\|\s*$/g, "")
-        .replace(/\s*\|\s*/g, " · ")
-        .replace(/[*`]/g, "")
-        .trim()
-    )
+  let inFence = false;
+  const kept = [];
+  for (const raw of markdown.split("\n")) {
+    if (/^\s*```/.test(raw)) {
+      // The fence contributes only its language tag ("shell", "json") otherwise.
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      // Code samples are already plain text; stripping "markup" out of them
+      // mangles the one thing a reader might want to copy.
+      kept.push(raw.trim());
+      continue;
+    }
+    if (/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(raw)) continue; // table separator row
+    kept.push(unescapeMarkdown(tidyProse(raw)));
+  }
+  return kept
     .filter(Boolean)
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
-  // Escapes come off last: doing it earlier would let `\\[text\\](url)` turn
-  // back into a link after the link-collapsing step had already run.
-  return unescapeMarkdown(flat);
 }
+
+/** One line of prose markdown, flattened. */
+function tidyProse(line) {
+  return line
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^\s*[-*+]\s+/, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/<((?:https?|mailto):[^>]+)>/g, "$1")
+    // Autolinks are plain text by now, so anything still tag-shaped is markup
+    // (<figure>, <img src=...>) that would print as literal angle brackets.
+    .replace(/<\/?[a-zA-Z][^>]*>/g, " ")
+    .replace(/^\s*\|/g, "")
+    .replace(/\|\s*$/g, "")
+    .replace(/\s*\|\s*/g, " · ")
+    .replace(/[*`]/g, "")
+    .trim();
+}
+
 
 function sectionFor(id) {
   const first = id.split("/")[0];

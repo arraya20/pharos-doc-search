@@ -32,6 +32,26 @@ Three rules are baked in:
 3. **Live commands do not guess.** Timeouts and upstream errors surface as errors
    with the URL that failed, never as an empty result that looks like "no answer".
 
+## Ranking
+
+BM25 over weighted fields (title > headings > description > id > body), plus
+three corrections that the corpus needs:
+
+- **Whole-phrase and title coverage** — a query that names a page ("write my
+  first NFT") leads with that page instead of a page that merely repeats words.
+- **Compound terms** — `ChainID` is indexed as `chain`, `id` and `chainid`, so
+  "chain id" and "chainid" find each other.
+- **Definition-page bonus** — a short page that covers every term in the query
+  gets a bounded boost. "chain id" should open the 40-token Network Information
+  table, not the 4000-token method list that says `chainId` more often purely
+  because it is longer. BM25 counts how much of the query is in the page; it
+  cannot see how much of the page is about the query, and the shortest pages in
+  this corpus are all parameter references. The bonus requires full term
+  coverage, so brevity alone never wins.
+
+`scripts/rank-probe.mjs` prints how a set of realistic questions rank. It is a
+report, not an assertion — run it after touching the scorer.
+
 ## Install
 
 Node 20.11+.
@@ -177,7 +197,7 @@ on every build would be noise, not a signal.
 ## Tests
 
 ```bash
-npm test           # 99 pass, 5 skipped (live tests are opt-in)
+npm test           # 103 pass, 5 skipped (live tests are opt-in)
 npm run test:live  # 5 more: real ask call, real page fetch, 74-URL liveness sweep
 ```
 

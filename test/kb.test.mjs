@@ -174,3 +174,21 @@ test("an empty query returns nothing, not a browse list", () => {
   assert.deepEqual(searchDocs(""), []);
   assert.deepEqual(searchDocs("   "), []);
 });
+
+test("a bare field name finds the parameter table that defines it", () => {
+  // Regression: "chain id" used to rank the 4000-token JSON-RPC method list
+  // first, because it says chainId more often than the 40-token Network
+  // Information block does. Frequency is not aboutness. The definition-page
+  // bonus exists for exactly this shape of query, so pin it.
+  const top = searchDocs("chain id", { limit: 1 })[0];
+  assert.equal(top.id, "getting-started/network/pacific-mainnet");
+  assert.match(top.plain, /1672/, "the winning page must actually state the chain id");
+});
+
+test("the definition-page bonus does not promote every short page", () => {
+  // A short page wins only by covering the whole query. "wagmi" is not in the
+  // 103-token Safe wallet page, so that page must not ride its brevity to the
+  // top of a query it cannot answer.
+  const top = searchDocs("connect wallet with wagmi", { limit: 1 })[0];
+  assert.doesNotMatch(top.id, /wallets\/safe/);
+});
