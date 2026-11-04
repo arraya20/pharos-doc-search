@@ -1,0 +1,59 @@
+{
+  "name": "pharos-doc-search",
+  "version": "1.0.0",
+  "description": "Search Pharos developer documentation from the terminal: offline ranked search, live grounded answers, and a JSON API.",
+  "type": "module",
+  "bin": {
+    "pharos-docs": "./src/cli.mjs"
+  },
+  "main": "./src/kb.mjs",
+  "exports": {
+    ".": "./src/kb.mjs",
+    "./source": "./src/docs-source.mjs",
+    "./index": "./src/index.generated.mjs"
+  },
+  "files": [
+    "src/cli.mjs",
+    "src/kb.mjs",
+    "src/docs-source.mjs",
+    "src/index.generated.mjs",
+    "scripts/build-index.mjs",
+    "SKILL.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "search": "node src/cli.mjs",
+    "build:index": "node scripts/build-index.mjs",
+    "check": "node --check src/cli.mjs && node --check src/kb.mjs && node --check src/docs-source.mjs && node --check scripts/build-index.mjs && node --check functions/_lib/http.js && node --check functions/api/search.js && node --check functions/api/ask.js && node --check functions/api/doc.js && node --check functions/api/meta.js",
+    "test": "node --test",
+    "test:live": "RUN_LIVE_TESTS=1 node --test test/live.test.mjs",
+    "verify": "node src/cli.mjs verify",
+    "dev": "wrangler pages dev",
+    "deploy": "wrangler pages deploy"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "keywords": [
+    "pharos",
+    "documentation",
+    "search",
+    "cli",
+    "mcp",
+    "agent",
+    "bm25",
+    "evm",
+    "solidity",
+    "web3"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arraya20/pharos-doc-search.git"
+  },
+  "homepage": "https://github.com/arraya20/pharos-doc-search#readme",
+  "bugs": {
+    "url": "https://github.com/arraya20/pharos-doc-search/issues"
+  }
+}

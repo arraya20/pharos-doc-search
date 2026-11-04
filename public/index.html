@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>doc-search — Pharos developer documentation, indexed</title>
+  <meta name="description" content="Search the Pharos developer documentation offline in your browser, or ask the live docs a question. Every result links to the official page it came from." />
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>⌕</text></svg>" />
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">⌕</span>
+        <div>
+          <h1>doc-search</h1>
+          <p class="brand-sub">Pharos developer documentation, indexed for agents and humans</p>
+        </div>
+      </div>
+      <nav class="top-links">
+        <a href="https://docs.pharos.xyz" target="_blank" rel="noreferrer">docs.pharos.xyz</a>
+        <a href="https://docs.pharos.xyz/llms.txt" target="_blank" rel="noreferrer">llms.txt</a>
+        <a href="#api">API</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="search-shell" role="search">
+      <div class="tabs" role="tablist" aria-label="Mode">
+        <button class="tab is-active" data-mode="search" role="tab" aria-selected="true">Search <span class="kbd">index</span></button>
+        <button class="tab" data-mode="ask" role="tab" aria-selected="false">Ask <span class="kbd">live</span></button>
+      </div>
+
+      <div class="field">
+        <input
+          id="q"
+          type="search"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="what is the pacific mainnet chain id and rpc"
+          aria-label="Search the documentation"
+          aria-describedby="hint"
+        />
+        <button id="go" class="go" type="button">Search</button>
+      </div>
+
+      <div id="goal-row" class="field goal-row" hidden>
+        <input id="goal" type="text" autocomplete="off" placeholder="goal (optional) — e.g. fund a trading bot" aria-label="Goal" />
+      </div>
+
+      <div class="controls">
+        <div id="sections" class="chips" aria-label="Section filter"></div>
+        <div class="controls-right">
+          <label class="select">
+            <span>results</span>
+            <select id="limit" aria-label="Result limit">
+              <option value="3">3</option>
+              <option value="5" selected>5</option>
+              <option value="10">10</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <p id="hint" class="hint">Search runs entirely in this tab against a build of <span id="pages">the docs</span>. Press <span class="kbd">/</span> to focus.</p>
+    </section>
+
+    <section id="status" class="status" hidden></section>
+    <section id="results" class="results" aria-live="polite"></section>
+
+    <section id="answer" class="answer" hidden></section>
+
+    <section class="examples">
+      <h2>Try</h2>
+      <div id="examples" class="chips"></div>
+    </section>
+
+    <section id="api" class="api">
+      <h2>API</h2>
+      <p class="api-lede">The same index is served as JSON. No key, no auth, CORS open.</p>
+      <table class="api-table">
+        <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /api/search?q=chain+id&limit=5</code></td><td>ranked pages, snippets, official URLs</td></tr>
+          <tr><td><code>GET /api/ask?q=how+do+i+bridge+usdc</code></td><td>grounded answer + sources from the live docs</td></tr>
+          <tr><td><code>GET /api/doc?id=getting-started/gas-model</code></td><td>one page, from the index or live (<code>source=live</code>)</td></tr>
+          <tr><td><code>GET /api/meta</code></td><td>index size, content hash, build time</td></tr>
+        </tbody>
+      </table>
+      <p class="api-note">
+        CLI equivalent:
+        <code>pharos-docs "chain id and rpc"</code>
+        · <code>pharos-docs ask "how do I deploy with foundry"</code>
+        <span class="hint">install: <code>npm link</code> in the repo</span>
+      </p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-inner">
+      <p id="provenance">loading index…</p>
+      <p class="foot-note">
+        Unofficial developer tool. Content belongs to <a href="https://docs.pharos.xyz" target="_blank" rel="noreferrer">Pharos</a>;
+        every result links back to the source page.
+      </p>
+    </div>
+  </footer>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
