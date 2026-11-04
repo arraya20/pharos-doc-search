@@ -12,14 +12,24 @@ import { DOCS, INDEX_META } from "./index.generated.mjs";
 
 export { DOCS, INDEX_META };
 
-const K1 = 1.4;
-const B = 0.72;
+// BM25 constants, chosen with scripts/tune.mjs over the labelled set and then
+// checked against the two held-out sets, which did not move when these changed.
+// b sits at 0.82 rather than the textbook 0.75 because the corpus mixes 40-word
+// parameter tables with 4000-word API dumps: without a heavy length penalty the
+// long pages win every query they happen to contain the words for.
+const K1 = 0.6;
+const B = 0.82;
 const FIELD_WEIGHTS = { title: 5.0, headings: 3.0, description: 2.0, id: 1.6, text: 1.0 };
 const SNIPPET_RADIUS = 170;
-// Weight of the definition-page bonus, and the length below which a page is too
-// small to be a real reference table.
+// Weight of the definition-page bonus, the length below which a page is too
+// small to be a real reference table, how much of the query (weighted by term
+// rarity) a page must cover to earn the bonus, and how much information the
+// query itself must carry before brevity is allowed to matter.
 const DEFINITION_WEIGHT = 8;
 const MIN_DEFINITION_TOKENS = 24;
+const MIN_DEFINITION_COVERAGE = 0.8;
+const MIN_QUERY_IDF = 1.0;
+const MIN_TERM_DENSITY = 0.01;
 
 const STOPWORDS = new Set([
   "a", "about", "an", "and", "any", "are", "as", "at", "be", "by", "can", "do", "does",
@@ -30,7 +40,16 @@ const STOPWORDS = new Set([
   // Quantifiers that ask about magnitude without naming anything. "how much
   // does a transaction cost" is a question about gas; leaving "much" in the
   // query let a marketing page that says "no matter how much" outrank it.
-  "much", "many"
+  "much", "many",
+  // Question scaffolding. These are rare enough in the corpus to carry high
+  // idf, which makes them actively harmful: "what tokens exist on testnet"
+  // weighted "exist" (df 4, idf 2.8) as the second most important word and
+  // pushed the token registry below a page that merely repeats "testnet".
+  // They never name the subject of a question, so they are dropped from the
+  // query — the corpus is untouched.
+  "exist", "exists", "mean", "means", "difference", "differences", "work",
+  "works", "working", "happen", "happens", "able", "actually", "really",
+  "exactly", "versus", "vs"
 ]);
 
 // Domain vocabulary that natural-language questions use but docs spell differently.
@@ -64,11 +83,43 @@ const ALIASES = {
   errors: ["revert", "error"],
   revert: ["error", "revert"],
   install: ["setup", "install"],
-  node: ["node", "validator"]
+  node: ["node", "validator"],
+  // The docs page is titled "FAQs"; people type the words out.
+  question: ["faq"], faq: ["question"],
+  manage: ["management"], management: ["manage"],
+  config: ["configuration"], configuration: ["config"]
 };
+
+// Names people use that the documentation never writes down. The Pharos docs
+// describe getting testnet PROS but the word "faucet" appears on no page, so
+// "faucet" degraded into an alias for "gas testnet" and opened the fee
+// mechanics page. Aliases cannot fix this — there is nothing in the corpus to
+// point at. A short intent table can, and it is small enough to audit: one
+// line per colloquialism, each with the page it names.
+const INTENTS = {
+  faucet: "getting-started/get-pros-gas",
+  tap: "getting-started/get-pros-gas"
+};
+const INTENT_BOOST = 1.5;
 
 function normalize(text) {
   return String(text || "").toLowerCase();
+}
+
+// Plurals are folded so "tokens" and "token" are one term. Without this the
+// vocabulary carries both spellings with different document frequencies, and a
+// query in one number cannot reach a page written in the other: "wallet
+// providers" missed "Wallet" because the section page only says "providers".
+// Only trailing -s is folded; -ing/-ment/-tion are left alone, because a
+// half-Porter that turns "pruning" into "prun" but not "prune" makes things
+// worse than doing nothing. Token mixups between distinct words are handled by
+// the alias table, which is auditable.
+function foldPlural(token) {
+  if (token.length <= 3) return token;
+  if (/[^aeiou]ies$/.test(token)) return `${token.slice(0, -3)}y`;
+  if (/(?:ses|xes|zes|ches|shes)$/.test(token)) return token.slice(0, -2);
+  if (/[^s]s$/.test(token)) return token.slice(0, -1);
+  return token;
 }
 
 export function tokenize(text) {
@@ -90,16 +141,16 @@ export function tokenize(text) {
       const cleaned = token.replace(/^[.\-]+|[.\-]+$/g, "");
       if (!cleaned) continue;
       // Keep dotted/hyphenated identifiers searchable both whole and in parts.
-      out.push(cleaned);
+      out.push(foldPlural(cleaned));
       if (/[.\-_]/.test(cleaned)) {
-        for (const part of cleaned.split(/[.\-_]+/)) if (part.length > 2) out.push(part);
+        for (const part of cleaned.split(/[.\-_]+/)) if (part.length > 2) out.push(foldPlural(part));
       }
     }
   }
   return out;
 }
 
-function queryTerms(query) {
+export function queryTerms(query) {
   const base = tokenize(query).filter((t) => t.length > 1 && !STOPWORDS.has(t));
   const expanded = new Set(base);
   for (const term of base) {
@@ -257,40 +308,59 @@ export function searchDocs(query, options = {}) {
     // this, a page that only repeats the object of the question outranks the
     // page that actually answers it.
     const uniqueBase = [...new Set(base)];
-    if (uniqueBase.length > 1) {
-      let idfTotal = 0;
-      let idfHit = 0;
-      for (const term of uniqueBase) {
-        const weight = idf(term);
-        idfTotal += weight;
-        if (matchedTerms.includes(term)) idfHit += weight;
-      }
-      const coverage = idfTotal > 0 ? idfHit / idfTotal : 0;
-      score *= 0.35 + 0.65 * coverage;
+    let idfTotal = 0;
+    let idfHit = 0;
+    for (const term of uniqueBase) {
+      const weight = idf(term);
+      idfTotal += weight;
+      if (matchedTerms.includes(term)) idfHit += weight;
     }
+    const coverage = idfTotal > 0 ? idfHit / idfTotal : 0;
+    if (uniqueBase.length > 1) score *= 0.35 + 0.65 * coverage;
 
-    // Definition-page bonus. A short page that covers the whole query is
-    // usually the reference table that answers it — "chain id" wants the
+    // Definition-page bonus. A short page that answers the whole query is
+    // usually the reference table the user wants — "chain id" wants the
     // forty-token Network Information block, not a 4000-token methods list
-    // that happens to repeat chainId twenty times. BM25 cannot see this: it
-    // counts how much of the query is in the page, never how much of the page
-    // is about the query, and absolute term counts always favour the long
-    // document. In this corpus the shortest pages are all parameter
-    // references (network info, token registry, block explorer), so length is
-    // a usable proxy for "this page exists to state facts".
+    // that repeats chainId twenty times. BM25 cannot see this: it counts how
+    // much of the query is in the page, never how much of the page is about the
+    // query, and absolute term counts always favour the long document.
+    //
+    // Two gates keep it honest:
+    //   - the query must carry information (idf mass >= MIN_QUERY_IDF), so a
+    //     bare "network" does not start promoting whatever page is shortest;
+    //   - the page must cover the query almost entirely, weighted by rarity, so
+    //     dropping "usdc" is disqualifying while dropping "contract" is not.
     const bodyTokens = entry.lengths.text;
-    if (uniqueBase.length >= 2 && bodyTokens >= MIN_DEFINITION_TOKENS) {
-      const coveredAll = uniqueBase.every((term) => matchedTerms.includes(term));
-      if (coveredAll) {
-        const brevity = Math.max(0, 1 - bodyTokens / AVG_LEN.text);
-        score += DEFINITION_WEIGHT * brevity;
-      }
+    // For a one-word query, coverage is trivially satisfied by any page that
+    // mentions the word once, so the brevity bonus needs a second gate or the
+    // shortest passing mention wins: "faucet" started preferring the 300-token
+    // gas model over the 672-token faucet page. Require the page to be *about*
+    // the term — named in its title/headings, or dense enough in the body that
+    // it is a table label rather than a passing reference.
+    const onlyTerm = uniqueBase.length === 1 ? uniqueBase[0] : null;
+    const density = onlyTerm
+      ? (bodyTokens > 0 ? (entry.fields.text.get(onlyTerm) || 0) / bodyTokens : 0)
+      : 1;
+    const aboutIt =
+      onlyTerm === null ||
+      Boolean(entry.fields.title.get(onlyTerm) || entry.fields.headings.get(onlyTerm)) ||
+      density >= MIN_TERM_DENSITY;
+    if (
+      bodyTokens >= MIN_DEFINITION_TOKENS &&
+      idfTotal >= MIN_QUERY_IDF &&
+      coverage >= MIN_DEFINITION_COVERAGE &&
+      aboutIt
+    ) {
+      const brevity = Math.max(0, 1 - bodyTokens / AVG_LEN.text);
+      score += DEFINITION_WEIGHT * brevity * coverage;
     }
 
     if (score > 0) {
+      const intent = base.find((t) => INTENTS[t.replace(/[_\-.]/g, "")] === entry.doc.id);
       scored.push({
         ...entry.doc,
-        score: Math.round(score * 100) / 100,
+        score: Math.round(score * (intent ? INTENT_BOOST : 1) * 100) / 100,
+        intent: intent || null,
         matchedTerms: [...new Set(matchedTerms)],
         snippet: buildSnippet(entry.doc, base.length ? base : all)
       });

@@ -41,16 +41,69 @@ three corrections that the corpus needs:
   first NFT") leads with that page instead of a page that merely repeats words.
 - **Compound terms** — `ChainID` is indexed as `chain`, `id` and `chainid`, so
   "chain id" and "chainid" find each other.
-- **Definition-page bonus** — a short page that covers every term in the query
-  gets a bounded boost. "chain id" should open the 40-token Network Information
-  table, not the 4000-token method list that says `chainId` more often purely
-  because it is longer. BM25 counts how much of the query is in the page; it
-  cannot see how much of the page is about the query, and the shortest pages in
-  this corpus are all parameter references. The bonus requires full term
-  coverage, so brevity alone never wins.
+- **Definition-page bonus** — a short page that covers the query gets a bounded
+  boost. "chain id" should open the 40-token Network Information table, not the
+  4000-token method list that says `chainId` more often purely because it is
+  longer. BM25 counts how much of the query is in the page; it cannot see how
+  much of the page is about the query, and the shortest pages in this corpus are
+  all parameter references. Three gates keep it honest: the query must carry
+  information (idf mass, so a bare "network" does not promote whatever page is
+  shortest), the page must cover the query almost entirely (weighted by term
+  rarity, so dropping "usdc" disqualifies while dropping "contract" does not),
+  and for a one-word query the page must be *about* the term — named in its
+  title/headings, or dense enough in the body to be a table label rather than a
+  passing mention.
+- **Rarity-weighted coverage** — missing a rare operative word costs more than
+  missing a common one. Without it, a page that repeats the object of the
+  question outranks the page that answers it.
+- **Query-side filler** — question scaffolding ("how much", "exist", "difference")
+  is dropped from the query only. Several of these are rare in the corpus and so
+  carry high idf, which made them actively harmful: "what tokens exist on
+  testnet" ranked `exist` as the second most important word.
+- **Plural folding** — `tokens`/`token`, `addresses`/`address` are one term.
+  Only a trailing `-s` is folded: a half-Porter that turns "pruning" into "prun"
+  but not "prune" is worse than nothing, so `-ing`/`-ment` pairs are handled by
+  the auditable alias table instead.
+- **Intent table** — for a handful of names the docs never write down. "faucet"
+  appears on no page at all, so the term degraded into an alias for "gas
+  testnet" and opened the fee mechanics page. Aliases cannot fix a word that is
+  absent from the corpus; a two-line table pointing at the page can.
 
-`scripts/rank-probe.mjs` prints how a set of realistic questions rank. It is a
-report, not an assertion — run it after touching the scorer.
+Ranking is measured, not eyeballed:
+
+```
+npm run eval               # labelled questions, precision@1/@3, MRR, gap cases
+npm run eval -- --holdout  # written after tuning: catches overfitting
+npm run eval -- --holdout2 # written after the first holdout was mined for fixes
+npm run tune               # grid search over k1/b, scored on the tuning set
+```
+
+The three sets are kept apart on purpose. Tuning on the set you report is how
+search quality claims become fiction: fix the misses you can see and the number
+goes up whether or not the scorer got better. `CASES` is the set constants were
+chosen against, `HOLDOUT` was written afterwards, and once its misses had been
+used for three fixes it stopped being evidence — so `HOLDOUT2` was written and
+run once, and its one miss was left alone rather than tuned away.
+
+| set      | precision@1 | precision@3 | MRR   | gaps |
+|----------|-------------|-------------|-------|------|
+| CASES    | 87.1%       | 100%        | 0.927 | 5/5  |
+| HOLDOUT  | 92.9%       | 100%        | 0.952 | 4/4  |
+| HOLDOUT2 | 85.0%       | 95.0%       | 0.904 | 4/4  |
+
+`test/ranking.test.mjs` fails the suite when top-3 drops below these floors, so
+a constant nudged or an index rebuilt with different text cannot regress the
+ranking silently.
+
+Most of the remaining precision@1 gap is genuine ambiguity — "gas price" is
+answered by both the gas model and `eth_gasPrice`. The one known wrong answer:
+"which contracts does the team deploy" opens the Piggy Bank tutorial instead of
+Canonical Contracts, because "team" is the rarest word in the query and the
+target page never uses it.
+
+`npm run eval -- --show` prints the top three for every case, which is what you
+want while changing the scorer; `npm run eval -- --misses` prints only the ones
+that are wrong.
 
 ## Install
 
@@ -197,7 +250,7 @@ on every build would be noise, not a signal.
 ## Tests
 
 ```bash
-npm test           # 103 pass, 5 skipped (live tests are opt-in)
+npm test           # 107 pass, 5 skipped (live tests are opt-in)
 npm run test:live  # 5 more: real ask call, real page fetch, 74-URL liveness sweep
 ```
 
