@@ -207,8 +207,7 @@ async function main() {
       text: body.slice(0, MAX_BODY_CHARS),
       plain: toPlainText(body),
       bytes: Buffer.byteLength(page.body, "utf8"),
-      httpStatus: page.status,
-      fetchedAt: new Date().toISOString().replace(/\.\d+Z$/, "Z")
+      httpStatus: page.status
     };
   });
 
@@ -224,8 +223,18 @@ async function main() {
     a === "Root" ? -1 : b === "Root" ? 1 : a.localeCompare(b)
   );
 
-  const docsJson = JSON.stringify(sorted);
-  const hash = createHash("sha256").update(docsJson).digest("hex").slice(0, 16);
+  // contentHash must depend on page content and nothing else. Hashing the whole
+  // record made every rebuild produce a new hash (and a new git diff) even when
+  // not one byte of documentation had changed, which made the hash useless as a
+  // "did the docs move?" signal. Field order is fixed here, not inherited from
+  // object literal order, so the projection cannot drift silently.
+  const hash = hashDocs(sorted);
+
+  // Keep the previous build timestamp when the content is unchanged, so an
+  // unchanged rebuild is a byte-for-byte no-op in git rather than churn.
+  const previous = await readMeta(join(ROOT, "src", "index.generated.mjs"));
+  const nowStamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  const generatedAt = previous && previous.contentHash === hash ? previous.generatedAt : nowStamp;
 
   const meta = {
     source: INDEX_URL,
@@ -233,7 +242,7 @@ async function main() {
     pageCount: sorted.length,
     sections,
     contentHash: hash,
-    generatedAt: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+    generatedAt,
     askEndpoint: `${ORIGIN}/index.md?ask=<question>&goal=<goal>`
   };
 
@@ -296,6 +305,43 @@ async function main() {
   process.stdout.write(
     `✔ indexed ${sorted.length} pages across ${sections.length} sections (${totalKb} KB full / ${slimKb} KB browser, hash ${hash})\n`
   );
+}
+
+/**
+ * The exact fields that make up "the documentation". Anything time-derived
+ * (fetch timestamps, build stamps) is deliberately absent.
+ */
+export function contentProjection(docs) {
+  return docs.map((doc) => ({
+    id: doc.id,
+    title: doc.title,
+    section: doc.section,
+    url: doc.url,
+    mdUrl: doc.mdUrl,
+    description: doc.description,
+    headings: doc.headings,
+    text: doc.text,
+    plain: doc.plain,
+    bytes: doc.bytes
+  }));
+}
+
+/** Stable 16-char content hash. Same docs in, same hash out — always. */
+export function hashDocs(docs) {
+  return createHash("sha256").update(JSON.stringify(contentProjection(docs))).digest("hex").slice(0, 16);
+}
+
+/** Read contentHash/generatedAt back out of an already-generated index file. */
+export async function readMeta(path) {
+  try {
+    const source = await readFile(path, "utf8");
+    const contentHash = source.match(/"contentHash":\s*"([0-9a-f]+)"/);
+    const generatedAt = source.match(/"generatedAt":\s*"([^"]+)"/);
+    if (!contentHash || !generatedAt) return null;
+    return { contentHash: contentHash[1], generatedAt: generatedAt[1] };
+  } catch {
+    return null;
+  }
 }
 
 function firstParagraph(text) {

@@ -99,3 +99,12 @@ test("shipping metadata has no placeholders and points at a real repo", () => {
   assert.match(skill, /^---\nname: pharos-doc-search\n/, "SKILL.md needs frontmatter");
   assert.match(skill, /^version: \d+\.\d+\.\d+$/m);
 });
+
+test("the hidden attribute actually hides things", () => {
+  const css = read("public", "style.css");
+  // Component rules like `.field { display: flex }` outrank the UA `[hidden]`
+  // rule, which left the goal input visible while in Search mode.
+  assert.match(css, /\[hidden\]\s*\{\s*display:\s*none\s*!important;?\s*\}/);
+  const html = read("public", "index.html");
+  assert.match(html, /id="goal-row"[^>]*hidden/, "the goal row must start hidden");
+});

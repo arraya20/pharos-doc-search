@@ -100,3 +100,18 @@ test("gibberish search exits 0 and admits it found nothing", async () => {
   assert.equal(payload.total, 0);
   assert.equal(payload.confidence.level, "none");
 });
+
+test("a misspelled section is reported, not silently empty", async () => {
+  const ok = await run(["--section", "Getting Started", "gas"]);
+  assert.equal(ok.code, 0);
+  const bad = await run(["--section", "Gettings Started", "gas"]);
+  assert.equal(bad.code, 2);
+  assert.match(bad.stderr, /unknown section/);
+  assert.match(bad.stderr, /Getting Started/);
+});
+
+test("list refuses an unknown section too", async () => {
+  const r = await run(["list", "--section", "Nope"]);
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /unknown section/);
+});

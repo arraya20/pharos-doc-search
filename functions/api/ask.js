@@ -11,7 +11,7 @@ const MAX_TIMEOUT_MS = 25_000;
 export async function onRequest(context) {
   const { request } = context;
   if (request.method === "OPTIONS") return preflight();
-  if (request.method !== "GET" && request.method !== "POST") {
+  if (!["GET", "POST"].includes(request.method)) {
     return fail("only GET and POST are supported", { status: 405, code: "method_not_allowed" });
   }
 
@@ -22,7 +22,9 @@ export async function onRequest(context) {
     return fail(err.message, { status: 400 });
   }
 
-  const question = (params.q ?? params.question ?? "").trim();
+  // ?q= wins only when it actually carries text; an empty body field must not
+  // shadow a real query parameter.
+  const question = [params.q, params.question].map((v) => String(v ?? "").trim()).find(Boolean) || "";
   if (!question) {
     return fail('missing question — pass ?q=<question> or a JSON body {"question":"..."}', {
       status: 400,

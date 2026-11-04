@@ -169,3 +169,8 @@ test("suggestTerms proposes vocabulary that exists in the index", () => {
   const vocabulary = new Set(DOCS.flatMap((doc) => doc.plain.toLowerCase().match(/[a-z0-9_-]{4,}/g) || []));
   for (const suggestion of suggestions) assert.ok(vocabulary.has(suggestion), `${suggestion} is not in the corpus`);
 });
+
+test("an empty query returns nothing, not a browse list", () => {
+  assert.deepEqual(searchDocs(""), []);
+  assert.deepEqual(searchDocs("   "), []);
+});

@@ -164,14 +164,20 @@ The build is deliberately strict. It exits non-zero when:
 - a page's markdown body is empty after boilerplate is stripped.
 
 Output is two artifacts from one payload: `src/index.generated.mjs` (with full
-markdown, 664 KB, used by `doc --offline`) and `public/index.generated.js`
-(plain text only, 394 KB, used by the browser). `test/bundle.test.mjs` asserts
+markdown, 661 KB, used by `doc --offline`) and `public/index.generated.js`
+(plain text only, 385 KB, used by the browser). `test/bundle.test.mjs` asserts
 they share the same content hash, so a stale copy fails the suite.
+
+The build is reproducible: `contentHash` is taken over page content only, and
+`generatedAt` is carried over from the previous build when nothing changed, so
+rebuilding an unchanged docs tree produces a byte-identical file and an empty
+git diff. `test/index-determinism.test.mjs` pins that down — a hash that moved
+on every build would be noise, not a signal.
 
 ## Tests
 
 ```bash
-`npm test`           # 82 pass, 5 skipped (live tests are opt-in)
+npm test           # 93 pass, 5 skipped (live tests are opt-in)
 npm run test:live  # 5 more: real ask call, real page fetch, 74-URL liveness sweep
 ```
 

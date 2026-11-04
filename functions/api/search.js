@@ -9,7 +9,7 @@ import { json, fail, preflight, readParams, clampInt } from "../_lib/http.js";
 export async function onRequest(context) {
   const { request } = context;
   if (request.method === "OPTIONS") return preflight();
-  if (request.method !== "GET" && request.method !== "POST") {
+  if (!["GET", "POST", "HEAD"].includes(request.method)) {
     return fail("only GET and POST are supported", { status: 405, code: "method_not_allowed" });
   }
 
@@ -39,6 +39,16 @@ export async function onRequest(context) {
 
   const limit = clampInt(params.limit, { min: 1, max: 20, fallback: 5 });
   const section = params.section || null;
+  // A misspelled section would otherwise return an empty list and read as
+  // "the docs do not cover this". Name the valid sections instead.
+  const sections = listSections();
+  if (section && section.toLowerCase() !== "all" && !sections.some((s) => s.toLowerCase() === section.toLowerCase())) {
+    return fail(`unknown section "${section}"`, {
+      status: 400,
+      code: "unknown_section",
+      extra: { sections }
+    });
+  }
   const results = searchDocs(query, { limit, section });
   const payload = toToolResult(query, results, {
     filter: { section, limit },

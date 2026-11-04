@@ -162,14 +162,10 @@ export function searchDocs(query, options = {}) {
   }
 
   const trimmed = String(query || "").trim();
-  if (!trimmed) {
-    return pool.slice(0, limit).map((entry) => ({
-      ...entry.doc,
-      score: 0,
-      matchedTerms: [],
-      snippet: entry.doc.description || (entry.doc.plain || entry.doc.text).slice(0, 200)
-    }));
-  }
+  // An empty query has no answer. Returning the first N pages would look like a
+  // match list to any caller that does not re-check the input; callers that want
+  // a listing should read DOCS directly.
+  if (!trimmed) return [];
 
   const { base, all } = queryTerms(trimmed);
   if (all.length === 0) return [];

@@ -16,8 +16,8 @@ export const INDEX_META = {
     "Resources",
     "Tooling & Infrastructure"
   ],
-  "contentHash": "1e73d0ea17ec7c23",
-  "generatedAt": "2026-11-04T13:45:55Z",
+  "contentHash": "ac48602ccd24c244",
+  "generatedAt": "2026-11-04T14:09:47Z",
   "askEndpoint": "https://docs.pharos.xyz/index.md?ask=<question>&goal=<goal>"
 };
 

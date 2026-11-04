@@ -10,7 +10,7 @@ import { json, fail, preflight, readParams, clampInt } from "../_lib/http.js";
 export async function onRequest(context) {
   const { request } = context;
   if (request.method === "OPTIONS") return preflight();
-  if (request.method !== "GET" && request.method !== "POST") {
+  if (!["GET", "POST", "HEAD"].includes(request.method)) {
     return fail("only GET and POST are supported", { status: 405, code: "method_not_allowed" });
   }
 

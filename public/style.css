@@ -1,5 +1,9 @@
 /* doc-search — light, tight, no decoration that isn't information. */
 
+/* `hidden` has to win over component display rules (.field is display:flex, so
+   #goal-row stayed visible in Search mode even with the attribute set). */
+[hidden] { display: none !important; }
+
 :root {
   --paper: #ffffff;
   --ink: #10151a;

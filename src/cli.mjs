@@ -252,7 +252,17 @@ async function main() {
   }
 
   if (opts.command === "list") {
-    const pool = opts.section ? DOCS.filter((doc) => doc.section.toLowerCase() === opts.section.toLowerCase()) : DOCS;
+    let pool = DOCS;
+    if (opts.section) {
+      const sections = listSections();
+      const exact = sections.find((name) => name.toLowerCase() === opts.section.toLowerCase());
+      if (!exact) {
+        console.error(red(`error: unknown section "${opts.section}"`));
+        console.error(dim(`sections: ${sections.join(", ")}`));
+        return 2;
+      }
+      pool = DOCS.filter((doc) => doc.section === exact);
+    }
     if (opts.json) {
       console.log(JSON.stringify({ total: pool.length, docs: pool }, null, 2));
       return 0;
@@ -310,7 +320,7 @@ async function main() {
       return 0;
     } catch (err) {
       reportUpstreamError(err);
-      return 2;
+      return 1;
     }
   }
 
@@ -326,12 +336,23 @@ async function main() {
       return 0;
     } catch (err) {
       reportUpstreamError(err);
-      return 2;
+      return 1;
     }
   }
 
   if (opts.command === "verify") {
     return runVerify(opts);
+  }
+
+  if (opts.section) {
+    const sections = listSections();
+    const exact = sections.find((name) => name.toLowerCase() === opts.section.toLowerCase());
+    if (!exact) {
+      console.error(red(`error: unknown section "${opts.section}"`));
+      console.error(dim(`sections: ${sections.join(", ")}`));
+      return 2;
+    }
+    opts.section = exact;
   }
 
   const results = searchDocs(opts.query, { limit: opts.limit, section: opts.section });

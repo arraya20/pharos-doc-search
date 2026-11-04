@@ -25,6 +25,7 @@ const els = {
   goalRow: $("#goal-row"),
   go: $("#go"),
   sections: $("#sections"),
+  controls: $("#controls"),
   limit: $("#limit"),
   hint: $("#hint"),
   pages: $("#pages"),
@@ -33,6 +34,12 @@ const els = {
   answer: $("#answer"),
   examples: $("#examples"),
   provenance: $("#provenance")
+};
+
+/** Only http(s) links are rendered as links; everything else is escaped text. */
+const safeHref = (url) => {
+  const raw = String(url || "");
+  return /^https?:\/\//i.test(raw) ? escapeHtml(raw) : "#";
 };
 
 const escapeHtml = (value) =>
@@ -197,6 +204,10 @@ function setMode(mode) {
     tab.setAttribute("aria-selected", String(active));
   }
   els.goalRow.hidden = mode !== "ask";
+  // Section filter and result limit are ranked-search controls. In Ask mode
+  // they changed nothing, so leaving them on screen promised an effect they
+  // did not have.
+  els.controls.hidden = mode === "ask";
   els.go.textContent = mode === "ask" ? "Ask" : "Search";
   els.q.placeholder =
     mode === "ask" ? "how do I bridge USDC to Pharos?" : "what is the pacific mainnet chain id and rpc";
@@ -344,7 +355,7 @@ function renderAnswer(payload, elapsedMs) {
       sources.length
         ? `<h4>Sources</h4><ul class="sources">${sources
             .slice(0, 10)
-            .map((source) => `<li><a href="${source.url}" target="_blank" rel="noreferrer">${escapeHtml(source.title)}</a> <span class="t">${escapeHtml(source.url.replace(/^https?:\/\//, ""))}</span></li>`)
+            .map((source) => `<li><a href="${safeHref(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.title)}</a> <span class="t">${escapeHtml(source.url.replace(/^https?:\/\//, ""))}</span></li>`)
             .join("")}</ul>`
         : ""
     }

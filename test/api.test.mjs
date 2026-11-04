@@ -209,3 +209,15 @@ test("/api/doc surfaces a soft-404 upstream as 502, and says the index copy surv
     globalThis.fetch = original;
   }
 });
+
+test("/api/search refuses an unknown section with the valid list attached", async () => {
+  const { status, body } = await call(searchHandler, "/api/search?q=gas&section=Nope");
+  assert.equal(status, 400);
+  assert.equal(body.error.code, "unknown_section");
+  assert.ok(body.sections.includes("Getting Started"));
+});
+
+test("HEAD is allowed so crawlers and uptime checks do not see 405", async () => {
+  const { status } = await call(searchHandler, "/api/search?q=gas", { method: "HEAD" });
+  assert.equal(status, 200);
+});
