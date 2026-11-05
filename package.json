@@ -57,5 +57,9 @@
   "homepage": "https://github.com/arraya20/pharos-doc-search#readme",
   "bugs": {
     "url": "https://github.com/arraya20/pharos-doc-search/issues"
+  },
+  "author": "Namri",
+  "publishConfig": {
+    "access": "public"
   }
 }
