@@ -152,6 +152,17 @@ export function isSoftNotFound(body) {
   return NOT_FOUND_BODY.test(String(body || "").trimStart());
 }
 
+/**
+ * Link-liveness decision for one fetched page. `verify` and the live link test
+ * both reduce to this: HTTP status alone cannot prove a page exists, because
+ * GitBook answers a missing page with 200 and a "Page Not Found" body.
+ */
+export function verifyFetchHealthy({ status, body }) {
+  if (status !== 200) return { ok: false, error: `HTTP ${status}` };
+  if (isSoftNotFound(body)) return { ok: false, error: 'soft 404 (HTTP 200 with a "Page Not Found" body)' };
+  return { ok: true, error: "" };
+}
+
 /** Fetch the raw markdown of one indexed page. */
 export async function fetchDocMarkdown(doc, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (!doc || !doc.mdUrl) throw new DocsSourceError("unknown document", { code: "bad_request" });

@@ -12,7 +12,7 @@ pharos-docs ask "how do I bridge USDC?" --goal "fund a trading bot"
 pharos-docs doc getting-started/gas-model
 ```
 
-Index: 74 pages · 8 sections · `1e73d0ea17ec7c23` · 87 tests (82 offline, 5 live).
+Index: 74 pages · 8 sections · `b9fac7ad8280a998` · 115 tests (110 offline, 5 live).
 
 ## Why this exists
 
@@ -127,9 +127,9 @@ node src/cli.mjs "how do I deploy with foundry"
 ```
 $ pharos-docs "pacific mainnet chain id and rpc"
 pharos-docs search "pacific mainnet chain id and rpc"
-3 results · confidence high (top page covers 60% of query terms) · index 74 pages @ 1e73d0ea17ec7c23
+5 results · confidence high (top page covers 100% of query terms) · index 74 pages @ b9fac7ad8280a998
 
-1. Pacific Mainnet · Getting Started · score 41.16
+1. Pacific Mainnet · Getting Started · score 64.5
    https://docs.pharos.xyz/getting-started/network/pacific-mainnet
    Network Information Parameter · Value Network · Pharos Pacific Mainnet ChainID · 1672 Coin Symbol/Ticker · PROS RPC URL · https://rpc.pharos.xyz ...
    id: getting-started/network/pacific-mainnet  ·  pharos-docs doc getting-started/network/pacific-mainnet
@@ -287,7 +287,7 @@ scripts/build-index.mjs    llms.txt → index, strict
 functions/api/*.js         Pages Functions endpoints
 functions/_lib/http.js     CORS, JSON, param parsing, body cap
 public/                    dashboard (no build step)
-test/                      87 tests
+test/                      115 tests
 ```
 
 Built for the Pharos Agent Arena. Docs: <https://docs.pharos.xyz>.

@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { searchDocs, getDoc, listSections, toToolResult, INDEX_META, DOCS } from "./kb.mjs";
-import { askDocs, fetchDocMarkdown, DocsSourceError } from "./docs-source.mjs";
+import { askDocs, fetchDocMarkdown, verifyFetchHealthy, DocsSourceError } from "./docs-source.mjs";
 
 function readVersion() {
   try {
@@ -179,13 +179,17 @@ async function runVerify(opts) {
     try {
       const res = await fetch(doc.mdUrl, { method: "GET", signal: controller.signal, headers: { "user-agent": "pharos-doc-search-cli/1.0" } });
       status = res.status;
-      await res.text();
+      const body = await res.text();
+      // HTTP 200 with a "Page Not Found" body is GitBook's soft-404, and it is
+      // exactly the failure this check exists to catch. `res.ok` is not enough.
+      const health = verifyFetchHealthy({ status, body });
+      error = health.error;
     } catch (err) {
       error = err.name === "AbortError" ? "timeout" : err.message;
     } finally {
       clearTimeout(timer);
     }
-    rows.push({ id: doc.id, url: doc.mdUrl, pageUrl: doc.url, status, ok: status === 200, error });
+    rows.push({ id: doc.id, url: doc.mdUrl, pageUrl: doc.url, status, ok: status === 200 && !error, error });
   }
 
   const broken = rows.filter((row) => !row.ok);
@@ -204,7 +208,7 @@ async function runVerify(opts) {
   } else {
     console.log(`\n${orange(bold("pharos-docs"))} ${dim("verify")} ${INDEX_META.pageCount} index URLs`);
     for (const row of rows) {
-      const mark = row.ok ? green("200") : red(String(row.status || row.error));
+      const mark = row.ok ? green("200") : red(row.error || String(row.status));
       if (!row.ok) console.log(`  ${mark} ${row.id} ${dim(row.url)}`);
     }
     console.log(

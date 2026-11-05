@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { isSoftNotFound as sourceDetects, fetchDocMarkdown, DocsSourceError } from "../src/docs-source.mjs";
+import { isSoftNotFound as sourceDetects, fetchDocMarkdown, verifyFetchHealthy, DocsSourceError } from "../src/docs-source.mjs";
 import { isSoftNotFound as builderDetects } from "../scripts/build-index.mjs";
 
 const SOFT_404 = [
@@ -42,6 +42,21 @@ test("real pages are not mistaken for soft 404s", () => {
 test("a page that merely mentions 'Page Not Found' mid-document is still a page", () => {
   const page = "# Errors\n\nThe node may answer with \"Page Not Found\" when a path is wrong.\n";
   assert.equal(sourceDetects(page), false);
+});
+
+test("verify classifies a soft 404 as unhealthy even at HTTP 200", () => {
+  const soft = verifyFetchHealthy({ status: 200, body: SOFT_404 });
+  assert.equal(soft.ok, false);
+  assert.match(soft.error, /soft 404/);
+});
+
+test("verify reports a real HTTP error by its status", () => {
+  assert.equal(verifyFetchHealthy({ status: 404, body: "" }).ok, false);
+  assert.equal(verifyFetchHealthy({ status: 404, body: "" }).error, "HTTP 404");
+});
+
+test("verify passes a real page at HTTP 200", () => {
+  assert.equal(verifyFetchHealthy({ status: 200, body: "# Gas Model\n" }).ok, true);
 });
 
 test("fetchDocMarkdown rejects instead of returning the placeholder body", async () => {
