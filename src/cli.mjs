@@ -1,9 +1,14 @@
 #!/usr/bin/env node
 // pharos-docs — search the Pharos developer documentation from a terminal.
 //
-// Two modes, on purpose:
-//   • search  → offline BM25 over the generated index (fast, deterministic)
-//   • ask     → live grounded answer from docs.pharos.xyz (slower, cited)
+// Three paths, on purpose:
+//   • pharos-docs "<question>"  → live answer from the Pharos Developer Docs MCP
+//                                 (askQuestion), cited. If the live docs are
+//                                 unreachable it says so and falls back to the
+//                                 offline index.
+//   • pharos-docs ask "<q>"     → the same live answer, but fail-closed: no fallback.
+//   • pharos-docs search "<q>"  → offline BM25 over the generated index
+//                                 (fast, deterministic, no network).
 //
 // Nothing is fabricated: every result carries the page it came from, and any
 // upstream failure is reported as a failure.
@@ -13,7 +18,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { searchDocs, getDoc, listSections, toToolResult, INDEX_META, DOCS } from "./kb.mjs";
-import { askDocs, fetchDocMarkdown, verifyFetchHealthy, DocsSourceError } from "./docs-source.mjs";
+import { fetchDocMarkdown, verifyFetchHealthy, DocsSourceError } from "./docs-source.mjs";
+import { answerQuestion } from "./answer.mjs";
 
 function readVersion() {
   try {
@@ -42,8 +48,10 @@ ${orange(bold("pharos-docs"))} ${dim("— Pharos developer documentation, from t
 ${dim(`index: ${INDEX_META.pageCount} pages from ${INDEX_META.source} · hash ${INDEX_META.contentHash}`)}
 
 ${bold("USAGE")}
-  pharos-docs <query> [options]              search the docs
-  pharos-docs ask "<question>" [--goal "..."] grounded answer from the live docs
+  pharos-docs "<question>" [options]         concise answer + sources (live docs MCP,
+                                             falls back to the offline index)
+  pharos-docs ask "<question>" [--goal "..."] same answer, fail-closed (no fallback)
+  pharos-docs search "<query>" [options]     offline ranked search, no network
   pharos-docs doc <id> [--raw]               read one page (live markdown)
   pharos-docs sections                       list documentation sections
   pharos-docs list [--section <name>]        list every indexed page
@@ -56,13 +64,14 @@ ${bold("OPTIONS")}
       --version          print the version
       --goal "<text>"    why you need the answer (sharpens the ask command)
       --timeout <ms>     upstream timeout for live calls (default 45000)
-      --offline          doc: print the indexed copy instead of fetching
+      --offline          never touch the network: search the index (doc: print the indexed copy)
       --no-color         disable ANSI styling
   -h, --help             this screen
 
 ${bold("EXAMPLES")}
-  pharos-docs "what is the pacific mainnet chain id and rpc"
-  pharos-docs "how do I deploy with foundry" --limit 3
+  pharos-docs "how do I deploy a contract?"
+  pharos-docs search "what is the pacific mainnet chain id and rpc"
+  pharos-docs search "how do I deploy with foundry" --limit 3
   pharos-docs ask "how do I bridge USDC to Pharos?" --goal "fund a trading bot"
   pharos-docs doc getting-started/gas-model --raw
   pharos-docs verify --json
@@ -84,7 +93,7 @@ function parseArgs(argv) {
   };
 
   const takesValue = { "-l": "limit", "--limit": "limit", "-s": "section", "--section": "section", "--goal": "goal", "--timeout": "timeout" };
-  const commands = new Set(["ask", "doc", "sections", "list", "verify"]);
+  const commands = new Set(["ask", "search", "doc", "sections", "list", "verify"]);
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -140,6 +149,10 @@ function printSearch(payload) {
     return;
   }
 
+  if (confidence.level === "low") {
+    console.log(`\n${yellow("No confident match: the pages below only share a few weak terms with the query. Treat them as leads, not an answer.")}`);
+  }
+
   results.forEach((doc, i) => {
     console.log(`\n${orange(bold(`${i + 1}.`))} ${bold(doc.title)} ${dim(`· ${doc.section} · score ${doc.score}`)}`);
     console.log(`   ${cyan(doc.url)}`);
@@ -153,7 +166,8 @@ function printSearch(payload) {
 }
 
 function printAsk(payload) {
-  console.log(`\n${orange(bold("pharos-docs"))} ${dim("ask · live docs.pharos.xyz")}`);
+  const via = payload.via === "mcp" ? "Pharos Developer Docs MCP" : "live docs.pharos.xyz";
+  console.log(`\n${orange(bold("pharos-docs"))} ${dim(`answer · ${via}`)}`);
   console.log(`${bold(payload.question)}${payload.goal ? dim(`  (goal: ${payload.goal})`) : ""}\n`);
   console.log(payload.answer.trim());
   if (payload.sources.length) {
@@ -165,7 +179,8 @@ function printAsk(payload) {
     console.log(`\n${bold("Follow-ups")}`);
     for (const f of payload.followups.slice(0, 3)) console.log(`  ${dim("-")} ${f.question}`);
   }
-  console.log(`\n${dim(`source: ${payload.upstream.url} · HTTP ${payload.upstream.httpStatus} · ${payload.fetchedAt}`)}\n`);
+  const tool = payload.upstream.tool ? ` · tool ${payload.upstream.tool}` : "";
+  console.log(`\n${dim(`source: ${payload.upstream.url}${tool} · HTTP ${payload.upstream.httpStatus} · ${payload.fetchedAt}`)}\n`);
 }
 
 async function runVerify(opts) {
@@ -334,14 +349,40 @@ async function main() {
       return 2;
     }
     try {
-      const payload = await askDocs(opts.query, { goal: opts.goal, timeoutMs: opts.timeout });
-      if (opts.json) console.log(JSON.stringify(payload, null, 2));
+      const payload = await answerQuestion(opts.query, { goal: opts.goal, timeoutMs: opts.timeout });
+      if (opts.json) console.log(JSON.stringify({ mode: "answer", ...payload }, null, 2));
       else printAsk(payload);
       return 0;
     } catch (err) {
       reportUpstreamError(err);
       return 1;
     }
+  }
+
+  // Bare `pharos-docs "<question>"`: answer from the live docs; if they cannot be
+  // reached, say so and degrade to the offline index instead of failing or guessing.
+  // `search`, `--offline` and `--section` are explicit requests for the index.
+  if (!opts.command && !opts.offline && !opts.section) {
+    try {
+      const payload = await answerQuestion(opts.query, { goal: opts.goal, timeoutMs: opts.timeout });
+      if (opts.json) console.log(JSON.stringify({ mode: "answer", ...payload }, null, 2));
+      else printAsk(payload);
+      return 0;
+    } catch (err) {
+      const code = err instanceof DocsSourceError ? err.code : "error";
+      console.error(yellow(`live docs unavailable (${err.message}) — falling back to the offline index.`));
+      console.error(dim("what follows are retrieved passages from the committed index, not a synthesized answer.\n"));
+      const results = searchDocs(opts.query, { limit: opts.limit });
+      const payload = toToolResult(opts.query, results, { filter: { section: null, limit: opts.limit } });
+      if (opts.json) console.log(JSON.stringify({ mode: "offline_fallback", fallback: { code, message: err.message }, ...payload }, null, 2));
+      else printSearch(payload);
+      return 0;
+    }
+  }
+
+  if (opts.command === "search" && !opts.query) {
+    console.error(red("error: search needs a query"));
+    return 2;
   }
 
   if (opts.command === "verify") {

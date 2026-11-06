@@ -1,18 +1,51 @@
 # pharos-doc-search
 
-Search Pharos developer documentation from the terminal, from code, or over HTTP.
-Two modes that fail differently on purpose:
+Ask the Pharos developer documentation a question from the terminal, from code,
+or over HTTP, and get a concise answer with links to the pages it came from.
+Built on the **Pharos Developer Docs MCP** (`https://docs.pharos.xyz/~gitbook/mcp`),
+with an offline index as a safety net. Two paths that fail differently on purpose:
 
-- **offline search** — a BM25 index of all 74 pages is committed to the repo, so ranking works with no network and no API key.
-- **live answers** — `ask` and `doc` hit `docs.pharos.xyz` and fail closed if the upstream is unreachable, so you never get a fabricated page.
+- **live answer** — `pharos-docs "<question>"` calls the docs MCP `askQuestion`
+  tool and prints the answer with its sources. It fails closed: a timeout or
+  upstream error is reported as one, never turned into a made-up answer. If the
+  live docs cannot be reached, the bare command says so and falls back to the
+  offline index; `ask` never falls back.
+- **offline search** — a BM25 index of all 74 pages is committed to the repo, so
+  `pharos-docs search` ranks pages with no network and no API key.
 
 ```
-pharos-docs "pacific mainnet chain id and rpc"
+pharos-docs "how do I deploy a contract?"
 pharos-docs ask "how do I bridge USDC?" --goal "fund a trading bot"
+pharos-docs search "pacific mainnet chain id and rpc"
 pharos-docs doc getting-started/gas-model
 ```
 
-Index: 74 pages · 8 sections · `b9fac7ad8280a998` · 115 tests (110 offline, 5 live).
+Index: 74 pages · 8 sections · `b9fac7ad8280a998` · 133 tests (128 offline, 5 live).
+
+## Built on the Pharos Developer Docs MCP
+
+`docs.pharos.xyz` publishes an MCP server (streamable HTTP, key-free, stateless).
+One JSON-RPC `tools/call` is all it takes, so there is no SDK dependency:
+
+```bash
+curl -s https://docs.pharos.xyz/~gitbook/mcp \
+  -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"askQuestion","arguments":{"question":"how do I deploy a contract?"}}}'
+```
+
+| MCP tool | Used for |
+| --- | --- |
+| `askQuestion` `{question, goal?}` | **The default answer path.** `src/mcp.mjs` calls it, splits the reply into answer and `# Sources`, and makes relative doc links absolute. |
+| `searchDocumentation` `{query}` | Not called at runtime. The committed index plays this role offline. |
+| `getPage` `{url}` | Not called at runtime. `pharos-docs doc <id>` fetches the page's `.md` twin instead. |
+
+If the MCP call fails with anything but a timeout, `src/answer.mjs` retries once
+through GitBook's `index.md?ask=` endpoint (same upstream, different route) and
+records why in the payload (`mcpError`). A timeout is not retried: the upstream is
+slow, and a second wait buys nothing. The payload's `via` field says which path
+answered (`mcp` or `gitbook-ask`). The Cloudflare `/api/ask` endpoint calls the
+GitBook `?ask=` route directly and does not go through MCP.
 
 ## Why this exists
 
@@ -107,12 +140,12 @@ that are wrong.
 
 ## Install
 
-Node 20.11+.
+Node 20.11+. No dependencies to install.
 
 ```bash
 git clone https://github.com/arraya20/pharos-doc-search
 cd pharos-doc-search
-npm link             # puts `pharos-docs` on your PATH; there are no dependencies to install
+npm link             # puts `pharos-docs` on your PATH
 pharos-docs --help
 ```
 
@@ -124,56 +157,150 @@ node src/cli.mjs "how do I deploy with foundry"
 
 ## Usage
 
+`pharos-docs "<question>"` returns a concise answer plus the doc pages it used.
+`pharos-docs search "<query>"` returns ranked pages from the offline index.
+All outputs below are real runs, captured unedited (colors off, `NO_COLOR=1`).
+
+### 1. A question the docs answer
+
 ```
-$ pharos-docs "pacific mainnet chain id and rpc"
+$ pharos-docs "how do I deploy a contract?"
+pharos-docs answer · Pharos Developer Docs MCP
+how do I deploy a contract?
+
+For a Solidity contract on Pharos, you can deploy with Foundry:
+
+1. Install Foundry and set up your contract project.
+2. Compile and test it:
+
+   ```sh
+   forge build
+   forge test
+   ```
+3. Create a deployment script that loads `PRIVATE_KEY`, starts a broadcast, and deploys your contract.
+4. Set your key and run the script:
+
+   ```sh
+   export PRIVATE_KEY=<your-private-key>
+   forge script script/DeployToken.s.sol --rpc-url <PHAROS_RPC_URL> --broadcast
+   ```
+
+Make sure the deployer wallet has enough testnet tokens for deployment costs. The [Write Your First Token](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token) includes a complete deployment-script example.
+
+Sources
+  https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract (Write Your First Uniswap Contract)
+  https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-uniswap-contract (Write Your First Uniswap Contract)
+  https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment (Validator Node Deployment)
+  https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token (Write Your First Token)
+  https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-nft (Write Your First NFT)
+  https://docs.pharos.xyz/developer-guide/foundry/write-your-first-nft (Write Your First NFT)
+  https://docs.pharos.xyz/developer-guide/interoperability/call-evm-from-wasm (Call EVM From WASM)
+  https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-token (Write Your First Token)
+  … 2 more
+
+source: https://docs.pharos.xyz/~gitbook/mcp · tool askQuestion · HTTP 200 · 2026-11-06T07:27:57Z
+```
+
+### 2. Offline search, no network
+
+```
+$ pharos-docs search "pacific mainnet chain id and rpc" --limit 2
 pharos-docs search "pacific mainnet chain id and rpc"
-5 results · confidence high (top page covers 100% of query terms) · index 74 pages @ b9fac7ad8280a998
+2 results · confidence high (top page covers 100% of query terms) · index 74 pages @ b9fac7ad8280a998
 
 1. Pacific Mainnet · Getting Started · score 64.5
    https://docs.pharos.xyz/getting-started/network/pacific-mainnet
-   Network Information Parameter · Value Network · Pharos Pacific Mainnet ChainID · 1672 Coin Symbol/Ticker · PROS RPC URL · https://rpc.pharos.xyz ...
+   Network Information Parameter · Value Network · Pharos Pacific Mainnet ChainID · 1672 Coin Symbol/Ticker · PROS RPC URL · https://rpc.pharos.xyz Block Explorer · https://www.pharosscan.xyz > For the current node binary and Do…
    id: getting-started/network/pacific-mainnet  ·  pharos-docs doc getting-started/network/pacific-mainnet
 
-2. x402 Pacific Mainnet · Developer Guide · score 36.15
+2. x402 Pacific Mainnet · Developer Guide · score 35.59
    https://docs.pharos.xyz/developer-guide/x402/x402-pacific-mainnet
-   ...
+   A developer guide on how to get started with x402 on Pharos Pacific Mainnet Server-side: Using Express + x402 Middleware For Express applications, you can use the middleware pattern: /…
+   id: developer-guide/x402/x402-pacific-mainnet  ·  pharos-docs doc developer-guide/x402/x402-pacific-mainnet
 ```
 
-`ask` is the one command that needs the network. It returns a grounded answer
-with a numbered source list, plus the raw upstream URL and HTTP status so you can
-audit it:
+### 3. A question the docs do not answer
+
+The answer says it cannot answer instead of inventing one. The sources are the
+closest pages, listed so you can check for yourself.
 
 ```
-$ pharos-docs ask "How do I get PROS gas for a test wallet?"
-pharos-docs ask · live docs.pharos.xyz
-For a **test wallet**, use **Atlantic Testnet**. Its gas token is **PHRS**, not PROS.
-Add Atlantic to your wallet with RPC https://atlantic.dplabs-internal.com, chain ID 688689 ...
+$ pharos-docs "what is the price of bitcoin on binance"
+pharos-docs answer · Pharos Developer Docs MCP
+what is the price of bitcoin on binance
+
+I cannot provide Binance’s live Bitcoin price. The docs list a Pharos BTC/USD oracle feed, but not a current Binance quote. [Chainlink Push Engine Feeds](https://docs.pharos.xyz/tooling-and-infrastructure/oracles/chainlink-pe).
 
 Sources
+  https://docs.pharos.xyz/tooling-and-infrastructure/oracles/chainlink-pe (Chainlink Push Engine Feeds)
+  https://docs.pharos.xyz/tooling-and-infrastructure/oracles (Oracle)
+  https://docs.pharos.xyz/getting-started/token-registry (Token Registry)
+  https://docs.pharos.xyz/tooling-and-infrastructure/overview/publish-skill-af (Publish Service Agent)
+  https://docs.pharos.xyz/introduction/why-pharos (Why Pharos)
+  https://docs.pharos.xyz/getting-started/network/atlantic-testnet (Atlantic Testnet)
   https://docs.pharos.xyz/getting-started/get-pros-gas (Get PROS Gas)
-  https://docs.pharos.xyz/tooling-and-infrastructure/wallets (Wallet)
-  ...
-source: https://docs.pharos.xyz/index.md?ask=... · HTTP 200 · 2026-11-04T13:51:37Z
+  https://docs.pharos.xyz/api-and-sdk/json-rpc-methods (JSON-RPC API Methods)
+  … 2 more
+
+source: https://docs.pharos.xyz/~gitbook/mcp · tool askQuestion · HTTP 200 · 2026-11-06T07:28:19Z
 ```
+
+Offline `search` is just as candid: when the best page shares only a few weak
+terms with the query it prints `confidence low` and a warning that the pages are
+leads, not an answer; when nothing matches it prints "No page in the offline
+index matched" and exits 0.
+
+### When the live docs are unreachable
+
+The bare command says so on stderr, then degrades to the offline index. Here a
+1 ms `--timeout` forces the failure:
+
+```
+$ pharos-docs "how do I deploy with foundry" --timeout 1 --limit 2
+live docs unavailable (docs MCP did not answer within 1ms) — falling back to the offline index.
+what follows are retrieved passages from the committed index, not a synthesized answer.
+
+
+pharos-docs search "how do I deploy with foundry"
+2 results · confidence medium (related pages found, but the question may need the live docs) · index 74 pages @ b9fac7ad8280a998
+
+1. Foundry · Developer Guide · score 20.99
+   https://docs.pharos.xyz/developer-guide/foundry
+   This guide is suitable for developers who want to start building dApps using Pharos and Foundry toolchains. If you are a new user of Ethereum, please consider researching the Ethereum documentation before continuing. Write Your First Transaction This guide w…
+   id: developer-guide/foundry  ·  pharos-docs doc developer-guide/foundry
+
+2. Write Your First dApp · Developer Guide · score 19.78
+   https://docs.pharos.xyz/developer-guide/foundry/write-your-first-dapp
+   This guide will walk you through the process of building and deploying your first end-to-end decentralized application (dApp) on the Pharos blockchain. By the end of this guide, you will have a fully functional dApp that includes a…
+   id: developer-guide/foundry/write-your-first-dapp  ·  pharos-docs doc developer-guide/foundry/write-your-first-dapp
+```
+
+`pharos-docs ask "<q>"` has no such fallback: it exits 1 with the upstream error.
+`--offline` skips the network entirely, `--json` prints a machine-readable
+payload (`"mode": "answer"` or `"mode": "offline_fallback"`).
 
 ### Commands
 
 | Command | Network | What it does |
 | --- | --- | --- |
-| `pharos-docs <query>` | no | BM25 search over passages; `-l/--limit`, `-s/--section`, `--json` |
-| `pharos-docs ask "<q>"` | yes | Grounded answer + sources; `--goal`, `--timeout` |
+| `pharos-docs "<question>"` | yes, falls back | Concise answer + sources via the docs MCP; `--goal`, `--timeout`. Falls back to offline search, with a notice, if the live docs fail. `--offline` or `--section` go straight to the index. |
+| `pharos-docs ask "<q>"` | yes | The same answer, fail-closed: exit 1 on upstream failure, no fallback |
+| `pharos-docs search "<q>"` | no | BM25 search over passages; `-l/--limit`, `-s/--section`, `--json` |
 | `pharos-docs doc <id>` | yes | Live markdown of one page; `--offline` for the indexed copy, `--raw` for no header |
 | `pharos-docs sections` | no | The 8 sections with page counts |
 | `pharos-docs list [--section <s>]` | no | Every indexed page id and URL |
 | `pharos-docs verify` | yes | Re-checks all 74 index URLs; exit 1 if any are dead |
 
-Exit codes: `0` success (including a search that legitimately found nothing),
-`1` upstream/runtime failure, `2` bad usage or unknown page id.
+Exit codes: `0` success (including a search that legitimately found nothing, and
+a bare question that fell back to the index), `1` upstream/runtime failure of
+`ask`, `doc` or `verify`, `2` bad usage or unknown page id.
 
 ### As a library
 
 ```js
+// not on npm yet: npm i github:arraya20/pharos-doc-search
 import { searchDocs, getDoc, listSections, toToolResult } from "pharos-doc-search";
+import { askMcp } from "pharos-doc-search/mcp";   // live answer via the docs MCP
 
 const results = searchDocs("gas refund", { limit: 3 });
 // → [{ id, title, url, section, score, snippet, matchedTerms }, ...]
@@ -250,7 +377,7 @@ on every build would be noise, not a signal.
 ## Tests
 
 ```bash
-npm test           # 107 pass, 5 skipped (live tests are opt-in)
+npm test           # 128 pass, 5 skipped (live tests are opt-in)
 npm run test:live  # 5 more: real ask call, real page fetch, 74-URL liveness sweep
 ```
 
@@ -269,8 +396,9 @@ handler including its error paths, and the build invariants above.
 
 - **Index freshness is manual.** The docs move; `npm run verify` tells you when.
 - **`ask` is an upstream call, not a local model.** It is as fast and as good as
-  `docs.pharos.xyz` allows, typically 5-20 s, and returns 502/504 when upstream
-  does. It does not fall back to local synthesis.
+  the docs MCP allows, typically 5-20 s. `ask` returns an error when upstream does;
+  only the bare `pharos-docs "<question>"` falls back to the offline index, and it
+  says so when it does.
 - **No auth, no rate limit of its own.** The deployed API is read-only and
   cheap, but if you self-host it publicly put it behind Cloudflare rate limiting.
 - **Content is Pharos's.** Results quote their docs; the MIT license covers this
@@ -281,13 +409,15 @@ handler including its error paths, and the build invariants above.
 ```
 src/kb.mjs                 tokenizer, BM25 scoring, confidence, tool-result shaping
 src/index.generated.mjs    committed index (74 pages, full markdown)
-src/docs-source.mjs        live fetch + ask, fail-closed, soft-404 aware
+src/docs-source.mjs        live fetch + GitBook ask, fail-closed, soft-404 aware
+src/mcp.mjs                Pharos Developer Docs MCP client (askQuestion)
+src/answer.mjs             MCP first, GitBook ask second, typed errors
 src/cli.mjs                the CLI (no dependencies)
 scripts/build-index.mjs    llms.txt → index, strict
 functions/api/*.js         Pages Functions endpoints
 functions/_lib/http.js     CORS, JSON, param parsing, body cap
 public/                    dashboard (no build step)
-test/                      115 tests
+test/                      133 tests
 ```
 
 Built for the Pharos Agent Arena. Docs: <https://docs.pharos.xyz>.

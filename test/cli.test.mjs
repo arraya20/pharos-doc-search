@@ -26,7 +26,7 @@ test("no arguments prints help and exits 0", async () => {
 test("--help documents every command", async () => {
   const { code, stdout } = await run(["--help"]);
   assert.equal(code, 0);
-  for (const command of ["ask", "doc", "sections", "list", "verify"]) {
+  for (const command of ["ask", "search", "doc", "sections", "list", "verify"]) {
     assert.match(stdout, new RegExp(command));
   }
 });
@@ -38,7 +38,7 @@ test("--version prints a semver", async () => {
 });
 
 test("search --json returns a machine-readable payload", async () => {
-  const { code, stdout } = await run(["chain id and rpc for pacific mainnet", "--json"]);
+  const { code, stdout } = await run(["search", "chain id and rpc for pacific mainnet", "--json"]);
   assert.equal(code, 0);
   const payload = JSON.parse(stdout);
   assert.equal(payload.success, true);
@@ -47,7 +47,7 @@ test("search --json returns a machine-readable payload", async () => {
 });
 
 test("search honours --limit and --section", async () => {
-  const { stdout } = await run(["network", "--limit", "2", "--section", "Getting Started", "--json"]);
+  const { stdout } = await run(["search", "network", "--limit", "2", "--section", "Getting Started", "--json"]);
   const payload = JSON.parse(stdout);
   assert.ok(payload.results.length <= 2);
   for (const result of payload.results) assert.equal(result.section, "Getting Started");
@@ -94,7 +94,7 @@ test("doc without an id exits 2", async () => {
 });
 
 test("gibberish search exits 0 and admits it found nothing", async () => {
-  const { code, stdout } = await run(["zzzqqqx", "--json"]);
+  const { code, stdout } = await run(["search", "zzzqqqx", "--json"]);
   assert.equal(code, 0);
   const payload = JSON.parse(stdout);
   assert.equal(payload.total, 0);
@@ -114,4 +114,40 @@ test("list refuses an unknown section too", async () => {
   const r = await run(["list", "--section", "Nope"]);
   assert.equal(r.code, 2);
   assert.match(r.stderr, /unknown section/);
+});
+
+test("search without a query exits 2", async () => {
+  const { code, stderr } = await run(["search"]);
+  assert.equal(code, 2);
+  assert.match(stderr, /needs a query/);
+});
+
+test("--offline on a bare question never touches the network and returns ranked pages", async () => {
+  const { code, stdout } = await run(["chain id and rpc for pacific mainnet", "--offline", "--json"]);
+  assert.equal(code, 0);
+  const payload = JSON.parse(stdout);
+  assert.equal(payload.success, true);
+  assert.equal(payload.results[0].id, "getting-started/network/pacific-mainnet");
+  assert.equal(payload.mode, undefined);
+});
+
+// A 1 ms timeout makes every live attempt fail deterministically, with no
+// dependency on whether the machine running the suite is online.
+test("a bare question degrades to the offline index and says so when the live docs fail", async () => {
+  const { code, stdout, stderr } = await run(["how do I deploy with foundry", "--timeout", "1", "--json"]);
+  assert.equal(code, 0);
+  assert.match(stderr, /live docs unavailable/);
+  assert.match(stderr, /not a synthesized answer/);
+  const payload = JSON.parse(stdout);
+  assert.equal(payload.mode, "offline_fallback");
+  assert.ok(payload.fallback.code);
+  assert.ok(payload.results.length > 0);
+  for (const result of payload.results) assert.match(result.url, /^https:\/\/docs\.pharos\.xyz\//);
+});
+
+test("ask stays fail-closed: when the live docs fail it exits 1 and does not fall back", async () => {
+  const { code, stdout, stderr } = await run(["ask", "how do I deploy with foundry", "--timeout", "1"]);
+  assert.equal(code, 1);
+  assert.match(stderr, /error:/);
+  assert.doesNotMatch(stdout, /score/);
 });

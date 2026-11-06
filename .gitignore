@@ -5,3 +5,5 @@ node_modules/
 .env
 .env.*
 *.tgz
+.idea/
+skills/

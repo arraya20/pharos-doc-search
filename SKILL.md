@@ -22,7 +22,7 @@ page it did not fetch.
 
 | Mode | Command | Network | Use when |
 | --- | --- | --- | --- |
-| offline | `pharos-docs "<query>"` | none | you need candidate pages fast, or the network is down |
+| offline | `pharos-docs search "<query>"` | none | you need candidate pages fast, or the network is down |
 | live | `pharos-docs ask "<q>"` | required | you need prose that answers the question |
 
 Offline ranking is a committed index; it can be stale but it never lies about
@@ -30,7 +30,7 @@ what it fetched. Live mode fails closed: a timeout is an error, not "no answer".
 
 ## Procedure
 
-1. Start with `pharos-docs "<question as keywords>" --json` to get page ids,
+1. Start with `pharos-docs search "<question as keywords>" --json` to get page ids,
    URLs, scores, and a `confidence` verdict.
 2. Read `confidence`. `low` or `none` means your vocabulary missed the docs'
    vocabulary. Use `suggestTerms` from the JSON, or run `pharos-docs sections`
