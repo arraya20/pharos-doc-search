@@ -292,4 +292,4 @@ test/                      115 tests
 
 Built for the Pharos Agent Arena. Docs: <https://docs.pharos.xyz>.
 
-MIT © 2026 Namri
+MIT © 2026 arraya20
